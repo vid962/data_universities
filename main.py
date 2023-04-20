@@ -1,67 +1,40 @@
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-import scraper_helper
-
-# extracted the headers of website from chrome network tab
-headers = """accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
-accept-encoding: gzip, deflate, br
-accept-language: en-GB,en-US;q=0.9,en;q=0.8
-cache-control: max-age=0
-cookie: PHPSESSID=14cakhmscle13lsv1tq4qj12oj; pw_virt6_persistence=460917258.35918.0000
-sec-ch-ua: "Google Chrome";v="111", "Not(A:Brand";v="8", "Chromium";v="111"
-sec-ch-ua-mobile: ?0
-sec-ch-ua-platform: "Windows"
-sec-fetch-dest: document
-sec-fetch-mode: navigate
-sec-fetch-site: none
-sec-fetch-user: ?1
-upgrade-insecure-requests: 1
-user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36"""
-
-headers_eng = """accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8
-accept-encoding: gzip, deflate, br
-accept-language: en-US,en;q=0.5
-cookie: PHPSESSID=f4cqt6rot4sn65nf84a2kkmbuc; pw_virt6_persistence=460917258.35918.0000
-referer: https://ects.coi.pw.edu.pl/menu2/programy
-sec-ch-ua: "Chromium";v="112", "Brave";v="112", "Not:A-Brand";v="99"
-sec-ch-ua-mobile: ?0
-sec-ch-ua-platform: "Windows"
-sec-fetch-dest: document
-sec-fetch-mode: navigate
-sec-fetch-site: same-origin
-sec-fetch-user: ?1
-sec-gpc: 1
-upgrade-insecure-requests: 1
-user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36"""
-
-# using scraper_helper library to convert the string headers into dictionary, saves a lot of time
-headers = scraper_helper.get_dict(headers, strip_cookie=False)
-headers_eng = scraper_helper.get_dict(headers_eng, strip_cookie=False)
-
-print(headers)
-print(headers_eng)
 
 # Set the URL and language code
 URL_language_eng = 'https://ects.coi.pw.edu.pl/menu2/changelang/lang/eng'
-URL_language = 'https://ects.coi.pw.edu.pl/menu2/changelang/lang/pl'
+URL_language_pl = 'https://ects.coi.pw.edu.pl/menu2/changelang/lang/pl'
 
 
-def soup_request(url, headers):
-    # Make subsequent request to actual page with saved cookies and headers
-    response = requests.get(url, headers=headers)
+def soup_request(url):
+
+    # request to actual page with saved cookies and headers
+    sess = requests.Session()
+
+    # extract language code from URL
+    lang = url.split('/')[-1]
+    language = 'Polish' if lang == 'pl' else 'English'
+
+    req = sess.get('https://ects.coi.pw.edu.pl/menu2/programy')
+    print(req.status_code)
+    response = sess.get(url)
+    print(response.status_code)
     soup = BeautifulSoup(response.content, "html.parser")
 
     table = soup.find(name='table')
 
     data_frame_data = []
     for a_tag in table.find_all('a'):
-        link = a_tag.get('href').strip()
 
+        link = a_tag.get('href').strip()
         link = f'https://ects.coi.pw.edu.pl{link}'
 
-        subject = a_tag.get_text().strip()
-        req = requests.get(link, headers=headers)
+        full_subject = a_tag.get_text().strip().split(' ')
+        subject = ' '.join(full_subject[:-2])
+        level = str(full_subject[-2])
+
+        req = sess.get(link)
         print(link, req.status_code)
         soup = BeautifulSoup(req.text, 'html.parser')
 
@@ -77,65 +50,138 @@ def soup_request(url, headers):
             if len(tr.findChildren('td')) > 0 and tr.findChildren('td')[0].findChildren('h3'):
                 semester = tr.findChildren('td')[0].findChildren('h3')[0].get_text(strip=True)
                 print(semester)
+
             if len(tr.findChildren('td')) > 1:
                 try:
                     name = tr.findChildren('td')[2].get_text(strip=True)
+                    print(name)
                     ects = tr.findChildren('td')[3].get_text(strip=True)
+
+                    # extracting all syllabus links
+                    syllabus = tr.findChildren('td')[-1].find('a')['href'].strip()
+                    syllabus_link = f'https://ects.coi.pw.edu.pl{syllabus}'
+
                     if name != '∑=':
-                        subjects = {'Subject': subject,
+                        subjects = {'University_name': 'Politechnika Warszawska',
+                                    'City': 'Warsaw',
+                                    'Country': 'POL',
+                                    'Source': url,
+                                    'Language': language,
+                                    'Subject': subject,
+                                    'Level': level,
                                     'Link': link,
                                     'Faculty': faculty,
                                     'Semester': semester.replace(':', ''),
                                     'Name': name,
-                                    'Ect': ects
+                                    'Ect': ects,
+                                    'Syllabus': syllabus_link
                                     }
                         data_frame_data.append(subjects)
                 except Exception as e:
                     print(e)
 
-        # creating pandas dataframe
-        dataframe = pd.DataFrame(data_frame_data, index=list(range(len(data_frame_data))))
+    # creating pandas dataframe
+    dataframe = pd.DataFrame(data_frame_data, index=list(range(len(data_frame_data))))
+    print(dataframe)
+    print(dataframe.shape)
+
     return dataframe
 
 
 # create empty list to store the data frames
 data_frames = []
 
-soup_request(URL_language_eng, headers_eng)
-df1 = soup_request(URL_language_eng, headers_eng)
+df1 = soup_request(URL_language_pl)
 data_frames.append(df1)
 
-df2 = soup_request(URL_language, headers)
+df2 = soup_request(URL_language_eng)
 data_frames.append(df2)
 
 final_df = pd.concat(data_frames)
-# print(final_df)
-# print(final_df.shape)
+final_df.to_csv('final_data.csv', index=False)
 
-# CSV export
-# final_df.to_csv('final_data.csv', index=False)
+print(final_df)
+print(final_df.shape)
 
-# Create nodes dataframe
-nodes_df = pd.DataFrame()
-nodes_df['node_id'] = final_df['Subject'] + final_df['Faculty']
-nodes_df['node_type'] = final_df['Faculty']
-nodes_df = nodes_df.drop_duplicates()
+# creating sets for unique nodes and relations
+unique_nodes = set()
+unique_relations = set()
+node_properties = []
 
-# Create relations dataframe
-relations_df = pd.DataFrame()
-relations_df['from_id'] = final_df['Subject'] + final_df['Faculty']
-relations_df['to_id'] = final_df['Name'] + final_df['Faculty']
-relations_df['relation_type'] = final_df['Semester']
-relations_df['weight'] = final_df['Ect']
+for _, row in final_df.iterrows():
+    # create university node
+    university_node = {
+        'Node_name': row['University_name'],
+        'Node_type': 'university',
+        'source': row['Source'],
+        'language': row['Language'],
+    }
+    # add university node to unique nodes set
+    unique_nodes.add(tuple(university_node.items()))
 
-# Create node_properties dataframe
-node_properties_df = pd.DataFrame()
-node_properties_df['node_id'] = final_df['Subject'] + final_df['Faculty']
-node_properties_df['property_type'] = 'Link'
-node_properties_df['property_value'] = final_df['Link']
+    # create city node
+    city_node = {
+        'Node_name': row['City'],
+        'Node_type': 'city',
+        'source': row['City'],
+        'language': row['Language'],
+    }
+    # add city node to unique nodes set
+    unique_nodes.add(tuple(city_node.items()))
 
-# Save dataframes to CSV files
-nodes_df.to_csv("nodes.csv", index=False)
-relations_df.to_csv("relations.csv", index=False)
-node_properties_df.to_csv("node_properties.csv", index=False)
+    # create country node
+    country_node = {
+        'Node_name': row['Country'],
+        'Node_type': 'country',
+        'source': row['Country'],
+        'language': row['Language'],
+    }
+    # add country node to unique nodes set
+    unique_nodes.add(tuple(country_node.items()))
+
+    # create university-city relation
+    university_city_relation = {"source": row['University_name'],
+                                "label": "IS_LOCATED",
+                                "target": row['City']}
+    # add university-city relation to unique relations set
+    unique_relations.add(tuple(university_city_relation.items()))
+
+    # create city-country relation
+    city_country_relation = {"source": row['City'],
+                             "label": "IS_PART_OF",
+                             "target": row['Country']}
+    # add city-country relation to unique relations set
+    unique_relations.add(tuple(city_country_relation.items()))
+
+# Loop through the unique nodes
+for node in unique_nodes:
+
+    # Loop through the items in each node tuple
+    for item in node:
+        # Append the node property as a dictionary to the node_properties list
+        node_property = {
+            'node_name': 'node_name',
+            'property_name': 'property_name',
+            'property_value': 'property_value'
+        }
+node_properties.append(node_property)
+
+
+# convert unique nodes and relations sets back to dictionaries
+unique_nodes = [dict(node) for node in unique_nodes]
+unique_relations = [dict(relation) for relation in unique_relations]
+
+nodes_df = pd.DataFrame(unique_nodes)
+relations_df = pd.DataFrame(unique_relations)
+
+nodes_df.to_csv('nodes.csv')
+relations_df.to_csv('relations.csv')
+
+# Convert the node_properties list to a DataFrame
+node_properties_df = pd.DataFrame(node_properties)
+node_properties_df.to_csv('node_properties.csv', index=False)
+
+
+
+
 
