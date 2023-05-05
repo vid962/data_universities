@@ -52,17 +52,30 @@ class NodeCreator:
             self.create_node(row['University_name'], 'university', row['Source'], row['Language'])
             self.create_node(row['City'], 'city', row['City'], row['Language'])
             self.create_node(row['Country'], 'country', row['Country'], row['Language'])
-            self.create_node(row['Subject'], 'subject', row['Subject'], row['Language'])
+
+            # Field of study
+            self.create_node(row['field_of_study'], 'field', row['field_of_study'], row['Language'])
+
+            # Faculty is a division of one or few fields of study
             self.create_node(row['Faculty'], 'faculty', row['Faculty'], row['Language'])
-            self.create_node(row['Name'], 'name', row['Name'], row['Language'])
+
+            # Subject is single subject
+            self.create_node(row['subject'], 'subject', row['subject'], row['Language'])
+
+            # Specialization is a branch of field of study, division of few subjects
+            self.create_node(row['Specialization'], 'specialization', row['Specialization'], row['Language'])
 
             self.create_relation(row['University_name'], 'IS_LOCATED', row['City'])
             self.create_relation(row['City'], 'IS_PART_OF', row['Country'])
             self.create_relation(row['Faculty'], 'IS_PART_OF', row['University_name'])
-            self.create_relation(row['Subject'], 'IS_PART_OF', row['Faculty'])
-            self.create_relation(row['Name'], 'IS_PART_OF', row['Subject'])
+            self.create_relation(row['field_of_study'], 'IS_PART_OF', row['Faculty'])
+            self.create_relation(row['subject'], 'IS_PART_OF', row['field_of_study'])
 
-            # create here  SAME AS RELATIONS
+            self.create_relation(row['Specialization'], 'IS_PART_OF', row['field_of_study'])
+            self.create_relation(row['subject'], 'IS_PART_OF', row['Specialization'])
+
+
+            # creating SAME AS RELATIONS
             if row['Language'] == 'Polish':
                 if row['University_name'] in self.same_as_mapping['university']:
                     self.create_relation(row['University_name'], 'SAME_AS',
@@ -74,10 +87,10 @@ class NodeCreator:
                     self.create_relation(row['Country'], 'SAME_AS',
                     self.same_as_mapping['country'][row['Country']])
 
-            self.create_property(row['Name'], 'ECTS_subject_weight', row['Ect'])
-            self.create_property(row['Subject'], 'level_details', row['Level'])
-            self.create_property(row['Name'], 'semester_details', row['Semester'])
-            self.create_property(row['Name'], 'syllabus_details', row['Syllabus'])
+            self.create_property(row['subject'], 'ECTS_subject_weight', row['Ect'])
+            self.create_property(row['field_of_study'], 'level_details', row['Level'])
+            self.create_property(row['subject'], 'semester_details', row['Semester'])
+            self.create_property(row['subject'], 'syllabus_details', row['Syllabus'])
 
         self.unique_nodes = [dict(node) for node in self.unique_nodes]
         self.unique_relations = [dict(relation) for relation in self.unique_relations]
