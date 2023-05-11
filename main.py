@@ -1,19 +1,22 @@
 import pandas as pd
 import requests
 import re
+import lxml
+import cchardet
 from bs4 import BeautifulSoup
 from node_creator import NodeCreator
+import time
+
+start_time = time.time()
 
 # Set the URL and language code
 URL_language_eng = 'https://ects.coi.pw.edu.pl/menu2/changelang/lang/eng'
 URL_language_pl = 'https://ects.coi.pw.edu.pl/menu2/changelang/lang/pl'
+# request to actual page with saved cookies and headers
+sess = requests.Session()
 
 
-def soup_request(url):
-
-    # request to actual page with saved cookies and headers
-    sess = requests.Session()
-
+def soup_request(url, sess):
     # extract language code from URL
     lang = url.split('/')[-1]
 
@@ -44,7 +47,7 @@ def soup_request(url):
     soup = BeautifulSoup(response.content, "html.parser")
     table = soup.find(name='table')
 
-    data_frame_data = []
+    data_list = []
     for a_tag in table.find_all('a'):
 
         link = a_tag.get('href').strip()
@@ -72,16 +75,23 @@ def soup_request(url):
 
             if tr_class_name == ['blok_zwijanie']:
 
-                # To get the text content of the 'tr' element, not cleaned
+                # getting text content of the 'tr' element, not cleaned
                 tr_text = tr.get_text(strip=True)
+                specialization = tr_text.strip()
+
                 pattern = r'Specjalność:\s*(.*?)(\s*\((?:Rozwiń)\))'
-                extracted_text = re.search(pattern, tr_text)
+                pattern_2 = r'Specjalność:\s*(.*?)(\s*\((?:Expand)\))'
 
-                if extracted_text:
-                    specialization = extracted_text.group(1).strip()
+                # searching for the patterns
+                match = re.search(pattern, tr_text)
+                match_2 = re.search(pattern_2, tr_text)
 
-                else:
-                    print("Desired text not found in the string (specialisation)")
+                # if any pattern matched, extracting the specialization
+                if match or match_2:
+                    if match:
+                        specialization = match.group(1).strip()
+                    else:
+                        specialization = match_2.group(1).strip()
 
             if len(tr.findChildren('td')) > 0 and tr.findChildren('td')[0].findChildren('h3'):
                 semester = tr.findChildren('td')[0].findChildren('h3')[0].get_text(strip=True)
@@ -125,12 +135,12 @@ def soup_request(url):
                                     'Ect': ects,
                                     'Syllabus': syllabus_link
                                     }
-                        data_frame_data.append(subjects)
+                        data_list.append(subjects)
                 except Exception as e:
                     print(e)
 
     # creating pandas dataframe
-    dataframe = pd.DataFrame(data_frame_data, index=list(range(len(data_frame_data))))
+    dataframe = pd.DataFrame(data_list, index=list(range(len(data_list))))
     print(dataframe)
     print(dataframe.shape)
 
@@ -140,59 +150,64 @@ def soup_request(url):
 # create empty list to store the data frames
 data_frames = []
 
-df1 = soup_request(URL_language_pl)
+df1 = soup_request(URL_language_pl, sess)
 data_frames.append(df1)
 
-df2 = soup_request(URL_language_eng)
+df2 = soup_request(URL_language_eng, sess)
 data_frames.append(df2)
 
 final_df = pd.concat(data_frames)
-final_df.to_csv('final_data.csv', index=False)
 
-# final_df = pd.read_csv('final_data.csv')  # delete after
-# print(final_df['Syllabus'].value_counts().value_counts())  # delete
 
-def fetch_dt_elements(syllabus_links):
-
-    dt_data_list = []
+def fetch_syllabus_content(syllabus_links, sess):
+    data_syllabus_list = []
 
     for syllabus_link in syllabus_links:
-
-        # checking if the link is not None, an instance of str, and at least 30 characters long before making a request
-        if syllabus_link and isinstance(syllabus_link, str) and len(syllabus_link) >= 30:
-
-            response = requests.get(syllabus_link)
-
-            if response.status_code != 200:
+        # checking if the link is valid
+        if all([syllabus_link, isinstance(syllabus_link, str)]):
+            try:
+                response = sess.get(syllabus_link)
+                response.raise_for_status()
+            except requests.exceptions.HTTPError:
                 print(f"Failed to fetch dt elements from {syllabus_link}")
                 continue
 
-            soup = BeautifulSoup(response.content, "html.parser")
+            soup = BeautifulSoup(response.content, 'lxml')
+            all_dt_elements = soup.find_all("dt")
+            all_dd_elements = soup.find_all("dd")
 
-            # finding the dt elements
-            dt_elements_eng = soup.find("dt", text="Purpose of course:")
-            dt_elements_pl = soup.find("dt", text="Cel przedmiotu:")
+            # finding the index of the starting dt element
+            start_index = next((index for index, dt in enumerate(all_dt_elements)
+                                if dt.text.strip() in ["Purpose of course:", "Cel przedmiotu:"]), None)
 
-            # combining the English and Polish dt elements
-            dt_elements = []
-            if dt_elements_eng:
-                dt_elements.append(dt_elements_eng)
-            if dt_elements_pl:
-                dt_elements.append(dt_elements_pl)
+            if start_index is not None:
+                # selecting all dt and dd elements from start_index onwards
+                dt_elements = all_dt_elements[start_index:]
+                dd_elements = all_dd_elements[start_index:]
 
-            dt_elements_html = [str(element) for element in dt_elements]
+                # combining dt and dd elements, making sure to extract just the text
+                # combined_elements = " ".join([f"{dt.text}: {dd.text}" for dt, dd in zip(dt_elements, dd_elements)]
+                # normalizing whitespace and replacing consecutive spaces with a single space
+                # combined_elements = re.sub('\s+', ' ', combined_elements)
+                combined_elements = {dt.text: dd.text for dt, dd in zip(dt_elements, dd_elements)}
+                result = {
+                    "Syllabus": syllabus_link,
+                    "Content": combined_elements
+                }
+                data_syllabus_list.append(result)
 
-            result = {
-                "Link": syllabus_link,
-                "Content": " ".join(dt_elements_html)
-            }
-            dt_data_list.append(result)
+    df_syllabus = pd.DataFrame(data_syllabus_list)
+    print(df_syllabus)
 
-    return dt_data_list
+    return df_syllabus
 
+syllabus_df = fetch_syllabus_content(final_df['Syllabus'], sess)
+syllabus_df.to_csv('syllabus.csv', index=False)
 
-print(fetch_dt_elements(final_df['Syllabus']))
-print(final_df.shape)
+# merging the final_df and syllabus_df
+final_df = pd.merge(final_df, syllabus_df, on='Syllabus', how='left')
+final_df.to_csv('final_data.csv', index=False)
+print(final_df.head())
 
 # creating an instance of NodeCreator with the final_df
 node_creator = NodeCreator(final_df)
@@ -203,13 +218,7 @@ node_creator.process_data()
 # saving the processed data to CSV files
 node_creator.save_data_to_csv()
 
-
-
-
-
-
-
-
-
-
-
+# checking the total running time
+end_time = time.time()
+elapsed_time = end_time - start_time
+print(f"The program took {elapsed_time} seconds to complete.")
