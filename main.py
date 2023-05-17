@@ -157,9 +157,9 @@ df2 = soup_request(URL_language_eng, sess)
 data_frames.append(df2)
 
 final_df = pd.concat(data_frames)
+# final_df = pd.read_csv('final_data.csv') # delete after!!!
 
-
-def fetch_syllabus_content(syllabus_links, sess):
+def fetch_syllabus_content(syllabus_links, ses):
     data_syllabus_list = []
 
     for syllabus_link in syllabus_links:
@@ -186,10 +186,10 @@ def fetch_syllabus_content(syllabus_links, sess):
                 dd_elements = all_dd_elements[start_index:]
 
                 # combining dt and dd elements, making sure to extract just the text
-                # combined_elements = " ".join([f"{dt.text}: {dd.text}" for dt, dd in zip(dt_elements, dd_elements)]
+                combined_elements = " ".join([f"{dt.text}: {dd.text}" for dt, dd in zip(dt_elements, dd_elements)])
                 # normalizing whitespace and replacing consecutive spaces with a single space
-                # combined_elements = re.sub('\s+', ' ', combined_elements)
-                combined_elements = {dt.text: dd.text for dt, dd in zip(dt_elements, dd_elements)}
+                combined_elements = re.sub('\s+', ' ', combined_elements)
+                # combined_elements = {dt.text: dd.text for dt, dd in zip(dt_elements, dd_elements)}
                 result = {
                     "Syllabus": syllabus_link,
                     "Content": combined_elements
