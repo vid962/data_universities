@@ -14,56 +14,62 @@ class NodeCreator:
             },
             'city': {
                 'Warszawa': 'Warsaw',
-                # Add other city mappings here
             },
             'country': {
                 'Polska': 'Poland',
-                # Add other country mappings here
             }
         }
 
-    def create_node(self, node_name, node_type, source, language):
-        node = {
-            'Node_name': node_name,
-            'Node_type': node_type,
-            'source': source,
-            'language': language
-        }
-        self.unique_nodes.add(tuple(node.items()))
+    def create_node(self, node_name, node_type, node_value, node_language, node_year):
+        # checking if the values are not empty or null before creating nodes
+        if pd.notnull(node_name) and node_name != '':
+            node = {
+                'node_name': node_name,
+                'node_type': node_type,
+                'node_value': node_value,
+                'node_language': node_language,
+                'node_year': node_year
 
-    def create_relation(self, source, label, target):
-        relation = {
-            'source': source,
-            'label': label,
-            'target': target
-        }
-        self.unique_relations.add(tuple(relation.items()))
+            }
+            self.unique_nodes.add(tuple(node.items()))
+
+    def create_relation(self, start_node, relation_type, end_node):
+        # checking if the values are not empty or null before creating relations
+        if pd.notnull(start_node) and start_node != '' and pd.notnull(end_node) and end_node != '':
+            relation = {
+                'start_node': start_node,
+                'relation_type': relation_type,
+                'end_node': end_node
+            }
+            self.unique_relations.add(tuple(relation.items()))
 
     def create_property(self, node_name, property_name, property_value):
-        node_property = {
-            'node_name': node_name,
-            'property_name': property_name,
-            'property_value': property_value
-        }
-        self.node_properties.add(tuple(node_property.items()))
+        # checking if the values are not empty or null before creating properties
+        if pd.notnull(node_name) and node_name != '' and pd.notnull(property_value) and property_value != '':
+            node_property = {
+                'node_name': node_name,
+                'property_name': property_name,
+                'property_value': property_value
+            }
+            self.node_properties.add(tuple(node_property.items()))
 
     def process_data(self):
         for _, row in self.final_df.iterrows():
-            self.create_node(row['University_name'], 'university', row['Source'], row['Language'])
-            self.create_node(row['City'], 'city', row['City'], row['Language'])
-            self.create_node(row['Country'], 'country', row['Country'], row['Language'])
+            self.create_node(row['University_name'], 'university', row['Source'], row['Language'], row['Year'])
+            self.create_node(row['City'], 'city', row['City'], row['Language'], row['Year'])
+            self.create_node(row['Country'], 'country', row['Country'], row['Language'], row['Year'])
 
             # Field of study
-            self.create_node(row['Field_of_study'], 'field', row['Field_of_study'], row['Language'])
+            self.create_node(row['Field_of_study'], 'field', row['Field_of_study'], row['Language'], row['Year'])
 
             # Faculty is a division of one or few fields of study
-            self.create_node(row['Faculty'], 'faculty', row['Faculty'], row['Language'])
+            self.create_node(row['Faculty'], 'faculty', row['Faculty'], row['Language'], row['Year'])
 
             # Subject is single subject
-            self.create_node(row['Subject'], 'subject', row['Subject'], row['Language'])
+            self.create_node(row['Subject'], 'subject', row['Subject'], row['Language'], row['Year'])
 
             # Specialization is a branch of field of study, division of few subjects
-            self.create_node(row['Specialization'], 'specialization', row['Specialization'], row['Language'])
+            self.create_node(row['Specialization'], 'specialization', row['Specialization'], row['Language'], row['Year'])
 
             self.create_relation(row['University_name'], 'IS_LOCATED', row['City'])
             self.create_relation(row['City'], 'IS_PART_OF', row['Country'])
@@ -90,6 +96,7 @@ class NodeCreator:
             self.create_property(row['Field_of_study'], 'level_details', row['Level'])
             self.create_property(row['Subject'], 'semester_details', row['Semester'])
             self.create_property(row['Subject'], 'syllabus_details', row['Syllabus'])
+            self.create_property(row['Subject'], 'syllabus_content', row['Content'])
 
         self.unique_nodes = [dict(node) for node in self.unique_nodes]
         self.unique_relations = [dict(relation) for relation in self.unique_relations]
