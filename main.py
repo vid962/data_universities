@@ -10,18 +10,18 @@ import time
 
 start_time = time.time()
 
-# setting the URL and language code
+# Setting the URL and language code
 URL_language_eng = 'https://ects.coi.pw.edu.pl/menu2/changelang/lang/eng'
 URL_language_pl = 'https://ects.coi.pw.edu.pl/menu2/changelang/lang/pl'
-# request to actual page with saved cookies and headers
+# Initialize session for making requests with saved cookies and headers
 sess = requests.Session()
 
 
 def initial_request():
-    """Getting first links for different academic years. Used in another requests
-
-    @:returns link_and_year_data
-    link_and_year_data: It's a dictionary with all years and links available to scrap """
+    """Retrieve first links for different academic years to be used in subsequent requests.
+    Returns:
+        list: A list of dictionaries containing links and corresponding academic years.
+    """
 
     # Starting link to the year which is going to be scraped first
     starting_page = 'https://ects.coi.pw.edu.pl/menu2/zmienrok/rok/1'
@@ -35,9 +35,9 @@ def initial_request():
     # Find all 'a' tags within div_content
     a_tags = div_content.find_all('a')
 
-    link_and_year_data = []
+    study_year = []
 
-    for a_tag in a_tags[3:5]:
+    for a_tag in a_tags:
 
         # Extracting links
         link = a_tag.get('href')
@@ -46,29 +46,38 @@ def initial_request():
         button = a_tag.find('button')
         year = button.text if button else None
 
-        # Filtering only needed links
+        # Filtering only needed links, (those needed are shorter than 25 characters)
         if len(link) < 25:
-            link_and_year_data.append({'link': link, 'year': year})
+            study_year.append({'link': link, 'year': year})
 
-    return link_and_year_data
+    return study_year
 
 
 links_and_years = initial_request()
 
+
 def subject_syllabus_id(syllabus_link):
-
-    """Extracting Syllabus_id from the link to each syllabus
-
-    @:returns integer or None """
+    """Extract Syllabus_id from the link to each syllabus.
+    Args:
+        syllabus_link (str): Link to the syllabus.
+    Returns:
+        int or None: Extracted Syllabus_id or None if not found.
+    """
 
     match = re.search(r'/(\d+)$', syllabus_link)
     return int(match.group(1)) if match else None
 
 
 def soup_request(url, sess):
+    """Perform requests and parse data from the provided URL.
+        Args:
+            url (str): URL to request data from.
+            sess: Requests session.
+        Returns:
+            pd.DataFrame: DataFrame containing extracted data.
+        """
 
-    # extract language code from URL
-
+    # Extracting language code from URL (for now it was only Polish or English)
     lang = url.split('/')[-1]
     lang_dict = {
         'pl': {
@@ -120,12 +129,12 @@ def soup_request(url, sess):
             print(link, req.status_code)
             soup = BeautifulSoup(req.text, 'lxml')
 
-            # extracting all tables and faculty subject
+            # Extracting all tables and faculty subject
             tables = soup.find('div', {'id': 'content'})
             table1 = tables.findChildren('table')[0]
             faculty = table1.findChildren('tr')[1].findChildren('td')[1].string
 
-            # iterating through each table row to extract semester, subject and ects
+            # Iterating through each table row to extract semester, subject and ects
             data_table = tables.findChildren('table')[1]
             semester = ''
             specialization = ''
@@ -139,15 +148,15 @@ def soup_request(url, sess):
 
                 if tr_class_name == ['blok_zwijanie']:
 
-                    # getting text content of the 'tr' element, not cleaned
+                    # Getting text content of the 'tr' element, not cleaned
                     tr_text = tr.get_text(strip=True)
                     specialization = tr_text.strip()
 
-                    # searching for the patterns
+                    # Searching for the patterns
                     match = re.search(pattern, tr_text)
                     match_2 = re.search(pattern_2, tr_text)
 
-                    # if any pattern matched, extracting the specialization
+                    # If any pattern matched, extracting the specialization
                     if match or match_2:
                         if match:
                             specialization = match.group(1).strip()
@@ -171,10 +180,10 @@ def soup_request(url, sess):
                         else:
                             syllabus = None
 
-                        # regular expression pattern to match the needed links
+                        # Regular expression pattern to match the needed links
                         pattern = r"/menu3/view2/idPrzedmiot/\d+"
 
-                        # checking if the extracted link matches the pattern
+                        # Checking if the extracted link matches the pattern
                         if re.match(pattern, syllabus):
                             syllabus_link = f'https://ects.coi.pw.edu.pl{syllabus}'
                         else:
@@ -209,19 +218,32 @@ def soup_request(url, sess):
     return dataframe
 
 
-# create empty list to store the data frames
+# Create empty list to store the data frames
 data_frames = [soup_request(URL_language_pl, sess), soup_request(URL_language_eng, sess)]
 
+# Concatenate data frames to merge the data
 final_df_doubled = pd.concat(data_frames)
+
+# Define filters for duplicate removal
 filters = ['Year', 'Field_of_study', 'Level', 'Faculty', 'Specialization', 'Subject', 'Syllabus_id']
+
+# Drop duplicates based on filters and keep the first occurrence
 final_df = final_df_doubled.drop_duplicates(subset=filters, keep='first')
 
 
 def fetch_syllabus_content(syllabus_links, ses):
+    """Fetch syllabus content for a list of syllabus links.
+        Args:
+            syllabus_links (Series): Series containing syllabus links.
+            ses: Requests session.
+        Returns:
+            pd.DataFrame: DataFrame containing syllabus content.
+        """
+
     data_syllabus_list = []
 
-    for syllabus_link in syllabus_links[:10]:
-        # checking if the link is valid
+    for syllabus_link in syllabus_links:
+        # Checking if the link is valid
         if all([syllabus_link, isinstance(syllabus_link, str)]):
             try:
                 response = ses.get(syllabus_link)
@@ -234,18 +256,18 @@ def fetch_syllabus_content(syllabus_links, ses):
             all_dt_elements = soup.find_all("dt")
             all_dd_elements = soup.find_all("dd")
 
-            # finding the index of the starting dt element
+            # Finding the index of the starting dt element
             start_index = next((index for index, dt in enumerate(all_dt_elements)
                                 if dt.text.strip() in ["Purpose of course:", "Cel przedmiotu:"]), None)
 
             if start_index is not None:
-                # selecting all dt and dd elements from start_index onwards
+                # Selecting all dt and dd elements from start_index onwards
                 dt_elements = all_dt_elements[start_index:]
                 dd_elements = all_dd_elements[start_index:]
 
-                # combining dt and dd elements, making sure to extract the raw HTML
+                # Combining dt and dd elements, making sure to extract the raw HTML
                 combined_elements = " ".join([f"{str(dt)}: {str(dd)}" for dt, dd in zip(dt_elements, dd_elements)])
-                # normalizing whitespace and replacing consecutive spaces with a single space
+                # Normalizing whitespace and replacing consecutive spaces with a single space
                 combined_elements = re.sub('\s+', ' ', combined_elements)
                 result = {
                     "Syllabus": syllabus_link,
@@ -258,24 +280,26 @@ def fetch_syllabus_content(syllabus_links, ses):
 
     return df_syllabus
 
+
+# Fetching syllabus content and save to CSV
 syllabus_df = fetch_syllabus_content(final_df['Syllabus'], sess)
 syllabus_df.to_csv('syllabus.csv', index=False)
-#
-# merging the final_df and syllabus_df
+
+# Merging syllabus data with the main data frame
 final_df = pd.merge(final_df, syllabus_df, on='Syllabus', how='left')
 final_df.to_csv('final_data.csv', index=False)
 print(final_df.head())
 
-# creating an instance of NodeCreator with the final_df
+# Creating an instance of NodeCreator with the final_df
 node_creator = NodeCreator(final_df)
 
-# calling the process_data method to process the data
+# Calling the process_data method to process the data
 node_creator.process_data()
 
-# saving the processed data to CSV files
+# Saving the processed data to CSV files
 node_creator.save_data_to_csv()
 
-# checking the total running time
+# Calculate and display the total running time
 end_time = time.time()
 elapsed_time = end_time - start_time
 print(f"The program took {elapsed_time} seconds to complete.")
